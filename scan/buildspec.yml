@@ -1,0 +1,55 @@
+version: 0.2
+
+env:
+    variables:
+        AWS_REGION_NAME: ap-northeast-2
+        ECR_REPOSITORY_NAME: sbcntr-backend
+        DOCKER_BUILDKIT: "1"
+    
+phases:
+    install:
+        runtime-versions:
+            docker: 19
+
+    pre_build: 
+        commands:
+            - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+            - aws ecr --region ap-northeast-2 get-login-password | docker login --username AWS --password-stdin https://${AWS_ACCOUNT_ID}.dkr.ecr.ap-northeast-2.amazonaws.com/sbcntr-backend
+            - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/${ECR_REPOSITORY_NAME}
+            # 태그 이름으로 Git 커밋 해시를 이용
+            - IMAGE_TAG=$(echo ${CODEBUILD_RESOLVED_SOURCE_VERSION} | cut -c 1-7)
+            # 사전 준비: trivy를 설치
+            # 주석 처리된 curl 명령을 이용해 최신 버전을 취득하도록 구성할 수 있음
+            #- TRIVY_VERSION=$(curl -sS https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+            - TRIVY_VERSION=0.19.2
+            - rpm -ivh https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.rpm
+            # 사전 준비: dockle 설치
+            # 주석 처리된 curl 명령을 이용해 최신 버전을 취득하도록 구성할 수 있음
+            #- DOCKLE_VERSION=$(curl -sS https://api.github.com/repos/goodwithtech/dockle/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+            - DOCKLE_VERSION=0.3.15
+            - rpm -ivh https://github.com/goodwithtech/dockle/releases/download/v${DOCKLE_VERSION}/dockle_${DOCKLE_VERSION}_Linux-64bit.rpm
+    
+    build:
+        commands:
+            - docker image build -t ${REPOSITORY_URI}:${IMAGE_TAG} .
+    
+    post_build:
+        commands:
+            # trivy를 이용한 이미지 스캔(결과 저장용)
+            - trivy --no-progress -f json -o trivy_results.json --exit-code 0 ${REPOSITORY_URI}:${IMAGE_TAG}
+            # trivy를 이용한 이미지 스캔(취약점 수준이 CRITICAL인 경우는 빌드를 강제 종료)
+            - trivy --no-progress --exit-code 1 --severity CRITICAL ${REPOSITORY_URI}:${IMAGE_TAG}
+            - exit `echo $?`
+            # dockle를 이용한 이미지 확인(취약점 수준이 FATAL인 경우는 빌드를 강제 종료)
+            - dockle --format json -o dockle_results.json --exit-code 1 --exit-level "FATAL" ${REPOSITORY_URI}:${IMAGE_TAG}
+            - exit `echo $?`
+            # Docker이미지를 ECR에 푸시
+            - docker image push ${REPOSITORY_URI}:${IMAGE_TAG}
+            # 이미지 URL을 기록한 JSON 생성
+            - printf '{"name":"%s","ImageURI":"%s"}' $ECR_REPOSITORY_NAME $REPOSITORY_URI:$IMAGE_TAG > imageDetail.json
+
+artifacts:
+    files:
+        - imageDetail.json
+        - trivy_results.json
+        - dockle_results.json

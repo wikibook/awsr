@@ -1,0 +1,55 @@
+{
+  "executionRoleArn": "arn:aws:iam::[aws_account_id]:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "secretOptions": null,
+        "options": {
+          "awslogs-group": "/ecs/sbcntr-backend-def",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "portMappings": [
+        {
+          "hostPort": 80,
+          "protocol": "tcp",
+          "containerPort": 80
+        }
+      ],
+      "cpu": 256,
+      "readonlyRootFilesystem": true,
+      "environment": [],
+      "secrets": [
+        {
+          "valueFrom": "[Secrets Manager 보안 암호 ARN]:host::",
+          "name": "DB_HOST"
+        },
+        {
+          "valueFrom": "[Secrets Manager 보안 암호 ARN]:dbname::",
+          "name": "DB_NAME"
+        },
+        {
+          "valueFrom": "[Secrets Manager 보안 암호 ARN]:password::",
+          "name": "DB_PASSWORD"
+        },
+        {
+          "valueFrom": "[Secrets Manager 보안 암호 ARN]:username::",
+          "name": "DB_USERNAME"
+        }
+      ],
+      "memory": null,
+      "memoryReservation": 512,
+      "image": "<IMAGE1_NAME>",
+      "essential": true,
+      "name": "app"
+    }
+  ],
+  "memory": "1024",
+  "taskRoleArn": null,
+  "family": "sbcntr-backend-def",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "512"
+}
